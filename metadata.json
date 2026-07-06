@@ -1,0 +1,6 @@
+{
+  "name": "Rehber",
+  "description": "MagicOS 11 style elegant Contacts and Dialer application with favorite badges, contact cards, call history, settings, and interactive dialpad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
