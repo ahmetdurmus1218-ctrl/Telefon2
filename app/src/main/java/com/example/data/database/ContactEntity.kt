@@ -13,5 +13,6 @@ data class ContactEntity(
     val group: String = "",
     val other: String = "",
     val isFavorite: Boolean = false,
-    val favoriteBadge: String = "" // "Annem", "Babam", "Eşim", "Canım", or empty
+    val favoriteBadge: String = "", // "Annem", "Babam", "Eşim", "Canım", or empty
+    val storageAccount: String = "Cihaz Hafızası" // "Cihaz Hafızası", "Google Hesabı", "SIM Kart"
 )

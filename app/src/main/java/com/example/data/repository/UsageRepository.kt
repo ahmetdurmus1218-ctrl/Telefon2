@@ -63,7 +63,7 @@ class UsageRepository(
                     birthday = "10 Mayıs 1970",
                     group = "Aile",
                     other = "Zil sesi: Klasik",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = "Annem"
                 ),
                 ContactEntity(
@@ -72,7 +72,7 @@ class UsageRepository(
                     email = "babam@gmail.com",
                     birthday = "15 Ağustos 1968",
                     group = "Aile",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = "Babam"
                 ),
                 ContactEntity(
@@ -81,7 +81,7 @@ class UsageRepository(
                     email = "esim@gmail.com",
                     birthday = "12 Eylül 1996",
                     group = "Aile",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = "Eşim"
                 ),
                 ContactEntity(
@@ -89,7 +89,7 @@ class UsageRepository(
                     phone = "0535 777 66 55",
                     email = "canim@gmail.com",
                     group = "Aile",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = "Canım"
                 ),
                 ContactEntity(
@@ -99,7 +99,7 @@ class UsageRepository(
                     birthday = "15 Mayıs 1995",
                     group = "Arkadaşlar",
                     other = "Zil sesi, Notlar vb.",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = ""
                 ),
                 ContactEntity(
@@ -124,7 +124,7 @@ class UsageRepository(
                     email = "berkay@gmail.com",
                     birthday = "12 Şubat 1993",
                     group = "İş",
-                    isFavorite = true,
+                    isFavorite = false,
                     favoriteBadge = ""
                 )
             )
@@ -149,6 +149,209 @@ class UsageRepository(
                     usageDao.insertCallLog(CallLogEntity(contactId = id, name = contact.name, number = contact.phone, callType = "Gelen", timestamp = System.currentTimeMillis() - 3 * 24 * 3600 * 1000, category = "Mobil"))
                 }
             }
+        }
+    }
+
+    suspend fun syncDeviceContactsAndLogs() {
+        try {
+            val cleanPhoneToIdMap = mutableMapOf<String, Long>()
+            
+            // 1. Sync Contacts if permission granted
+            if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                val deviceContacts = fetchDeviceContacts()
+                val existingContacts = usageDao.getAllContacts().first()
+                val existingPhones = existingContacts.map { cleanPhoneNumber(it.phone) }.toSet()
+                
+                for (contact in deviceContacts) {
+                    val cleanPhone = cleanPhoneNumber(contact.phone)
+                    if (cleanPhone.isNotEmpty() && !existingPhones.contains(cleanPhone)) {
+                        val contactId = usageDao.insertContact(contact.copy(id = 0))
+                        cleanPhoneToIdMap[cleanPhone] = contactId
+                    }
+                }
+            }
+            
+            // Re-read map of all contacts to link call logs
+            val allCurrentContacts = usageDao.getAllContacts().first()
+            for (contact in allCurrentContacts) {
+                val cleanPhone = cleanPhoneNumber(contact.phone)
+                if (cleanPhone.isNotEmpty()) {
+                    cleanPhoneToIdMap[cleanPhone] = contact.id
+                }
+            }
+            
+            // 2. Sync Call Logs if permission granted
+            if (context.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                val deviceCallLogs = fetchDeviceCallLogs()
+                val existingCallLogs = usageDao.getAllCallLogs().first()
+                val existingTimestamps = existingCallLogs.map { it.timestamp }.toSet()
+                
+                for (log in deviceCallLogs) {
+                    if (!existingTimestamps.contains(log.timestamp)) {
+                        val cleanPhone = cleanPhoneNumber(log.number)
+                        val contactId = cleanPhoneToIdMap[cleanPhone]
+                        usageDao.insertCallLog(log.copy(id = 0, contactId = contactId))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun cleanPhoneNumber(phone: String): String {
+        return phone.replace(Regex("[^0-9+]"), "")
+    }
+
+    private fun fetchDeviceContacts(): List<ContactEntity> {
+        val contactsList = mutableListOf<ContactEntity>()
+        try {
+            val contentResolver = context.contentResolver
+            val cursor = contentResolver.query(
+                android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+                ),
+                null, null, null
+            )
+            cursor?.use {
+                val nameIdx = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIdx = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
+                
+                while (it.moveToNext()) {
+                    val name = if (nameIdx != -1) it.getString(nameIdx) ?: "Bilinmeyen" else "Bilinmeyen"
+                    val number = if (numberIdx != -1) it.getString(numberIdx) ?: "" else ""
+                    
+                    if (number.isNotEmpty()) {
+                        contactsList.add(
+                            ContactEntity(
+                                id = 0,
+                                name = name,
+                                phone = number,
+                                email = "",
+                                birthday = "",
+                                group = "Cihaz",
+                                isFavorite = false
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return contactsList
+    }
+
+    private fun fetchDeviceCallLogs(): List<CallLogEntity> {
+        val callLogList = mutableListOf<CallLogEntity>()
+        try {
+            val contentResolver = context.contentResolver
+            val cursor = contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    android.provider.CallLog.Calls.NUMBER,
+                    android.provider.CallLog.Calls.CACHED_NAME,
+                    android.provider.CallLog.Calls.TYPE,
+                    android.provider.CallLog.Calls.DATE,
+                    android.provider.CallLog.Calls.DURATION
+                ),
+                null, null, "${android.provider.CallLog.Calls.DATE} DESC LIMIT 100"
+            )
+            cursor?.use {
+                val numberIdx = it.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
+                val nameIdx = it.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
+                val typeIdx = it.getColumnIndex(android.provider.CallLog.Calls.TYPE)
+                val dateIdx = it.getColumnIndex(android.provider.CallLog.Calls.DATE)
+                val durationIdx = it.getColumnIndex(android.provider.CallLog.Calls.DURATION)
+                
+                while (it.moveToNext()) {
+                    val number = if (numberIdx != -1) it.getString(numberIdx) ?: "" else ""
+                    val name = if (nameIdx != -1) it.getString(nameIdx) ?: "" else ""
+                    val type = if (typeIdx != -1) it.getInt(typeIdx) else -1
+                    val date = if (dateIdx != -1) it.getLong(dateIdx) else 0L
+                    val duration = if (durationIdx != -1) it.getInt(durationIdx) else 0
+                    
+                    val callTypeStr = when (type) {
+                        android.provider.CallLog.Calls.INCOMING_TYPE -> "Gelen"
+                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "Giden"
+                        android.provider.CallLog.Calls.MISSED_TYPE -> "Cevapsız"
+                        else -> "Gelen"
+                    }
+                    
+                    callLogList.add(
+                        CallLogEntity(
+                            id = 0,
+                            number = number,
+                            name = name.ifEmpty { number },
+                            callType = callTypeStr,
+                            timestamp = date,
+                            durationSeconds = duration,
+                            category = "Mobil"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return callLogList
+    }
+
+    fun launchActualCall(phone: String) {
+        val cleanPhone = phone.replace(" ", "")
+        val intent = if (context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            android.content.Intent(android.content.Intent.ACTION_CALL, android.net.Uri.parse("tel:$cleanPhone"))
+        } else {
+            android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$cleanPhone"))
+        }
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun insertDeviceContact(name: String, phone: String, email: String) {
+        if (context.checkSelfPermission(android.Manifest.permission.WRITE_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        try {
+            val contentResolver = context.contentResolver
+            val rawContactUri = contentResolver.insert(android.provider.ContactsContract.RawContacts.CONTENT_URI, android.content.ContentValues())
+            val rawContactId = rawContactUri?.lastPathSegment?.toLongOrNull() ?: return
+
+            // Insert Name
+            val nameValues = android.content.ContentValues().apply {
+                put(android.provider.ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                put(android.provider.ContactsContract.Data.MIMETYPE, android.provider.ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                put(android.provider.ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+            }
+            contentResolver.insert(android.provider.ContactsContract.Data.CONTENT_URI, nameValues)
+
+            // Insert Phone
+            val phoneValues = android.content.ContentValues().apply {
+                put(android.provider.ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                put(android.provider.ContactsContract.Data.MIMETYPE, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                put(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER, phone)
+                put(android.provider.ContactsContract.CommonDataKinds.Phone.TYPE, android.provider.ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+            }
+            contentResolver.insert(android.provider.ContactsContract.Data.CONTENT_URI, phoneValues)
+
+            // Insert Email if present
+            if (email.isNotEmpty()) {
+                val emailValues = android.content.ContentValues().apply {
+                    put(android.provider.ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                    put(android.provider.ContactsContract.Data.MIMETYPE, android.provider.ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+                    put(android.provider.ContactsContract.CommonDataKinds.Email.ADDRESS, email)
+                    put(android.provider.ContactsContract.CommonDataKinds.Email.TYPE, android.provider.ContactsContract.CommonDataKinds.Email.TYPE_WORK)
+                }
+                contentResolver.insert(android.provider.ContactsContract.Data.CONTENT_URI, emailValues)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

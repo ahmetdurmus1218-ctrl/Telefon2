@@ -43,6 +43,10 @@ fun AppUsageScreen(
     val selectedFilter by viewModel.selectedCallFilter.collectAsState()
 
     var showDialpad by remember { mutableStateOf(false) }
+    var showCallSimulatorDialog by remember { mutableStateOf(false) }
+    var simNumber by remember { mutableStateOf("") }
+    var simName by remember { mutableStateOf("") }
+    var simContactId by remember { mutableStateOf<Long?>(null) }
 
     // Filter calls based on the active tab and search query
     val filteredLogs = callLogs.filter { log ->
@@ -194,7 +198,10 @@ fun AppUsageScreen(
                                 CallLogItem(
                                     log = log,
                                     onCallClick = {
-                                        viewModel.makeCall(log.number, log.name, log.contactId)
+                                        simNumber = log.number
+                                        simName = log.name
+                                        simContactId = log.contactId
+                                        showCallSimulatorDialog = true
                                     },
                                     onInfoClick = {
                                         log.contactId?.let { onContactClick(it) } ?: run {
@@ -215,7 +222,10 @@ fun AppUsageScreen(
                                 CallLogItem(
                                     log = log,
                                     onCallClick = {
-                                        viewModel.makeCall(log.number, log.name, log.contactId)
+                                        simNumber = log.number
+                                        simName = log.name
+                                        simContactId = log.contactId
+                                        showCallSimulatorDialog = true
                                     },
                                     onInfoClick = {
                                         log.contactId?.let { onContactClick(it) }
@@ -243,13 +253,112 @@ fun AppUsageScreen(
                         if (dialpadInput.isNotEmpty()) {
                             // Find contact if exists
                             val contact = contacts.find { it.phone.replace(" ", "") == dialpadInput.replace(" ", "") }
-                            viewModel.makeCall(dialpadInput, contact?.name ?: dialpadInput, contact?.id)
+                            simNumber = dialpadInput
+                            simName = contact?.name ?: dialpadInput
+                            simContactId = contact?.id
+                            showCallSimulatorDialog = true
                             showDialpad = false
                         }
                     }
                 )
             }
         }
+    }
+
+    if (showCallSimulatorDialog) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        AlertDialog(
+            onDismissRequest = { showCallSimulatorDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Phone,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Arama Seçenekleri", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "$simName ($simNumber) numaralı kişi aranıyor. Lütfen yapmak istediğiniz arama türünü seçin:",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Outgoing simulated
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            viewModel.startSimulatedCall(context, simNumber, simName, "Giden", 0)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Giden Arama Simülasyonu", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Uygulama içi giden arama ekranını açar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Incoming simulated with 5 seconds delay
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            android.widget.Toast.makeText(context, "Gelen arama 5 saniye içinde simüle edilecek...", android.widget.Toast.LENGTH_SHORT).show()
+                            viewModel.startSimulatedCall(context, simNumber, simName, "Gelen", 5)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.RingVolume, contentDescription = null, tint = Color(0xFF4CAF50))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Gelen Arama Simülasyonu (5sn)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("5 saniye bekler ve gelen arama ekranını açar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Real call
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            viewModel.makeCall(simNumber, simName, simContactId)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Gerçek Arama Başlat", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Cihazın kendi telefon şebekesini kullanır.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCallSimulatorDialog = false }) {
+                    Text("İptal", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 
@@ -376,8 +485,11 @@ fun CallLogItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            val durationText = if (log.callType != "Cevapsız" && log.durationSeconds > 0) {
+                " • " + formatDuration(log.durationSeconds)
+            } else ""
             Text(
-                text = "${log.category} • $dateStr",
+                text = "${log.category} • $dateStr$durationText",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -586,5 +698,16 @@ fun DialpadButton(
                 )
             }
         }
+    }
+}
+
+fun formatDuration(seconds: Int): String {
+    if (seconds <= 0) return ""
+    val minutes = seconds / 60
+    val remainingSeconds = seconds % 60
+    return if (minutes > 0) {
+        "${minutes} dk ${remainingSeconds} sn"
+    } else {
+        "${remainingSeconds} sn"
     }
 }

@@ -4,10 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +37,19 @@ fun ContactDetailScreen(
 ) {
     val contacts by viewModel.allContacts.collectAsState()
     val contact = contacts.find { it.id == contactId }
+    var showCallSimulatorDialog by remember { mutableStateOf(false) }
+
+    val callLogs by viewModel.allCallLogs.collectAsState()
+    val contactLogs = remember(callLogs, contact) {
+        if (contact == null) {
+            emptyList()
+        } else {
+            callLogs.filter { 
+                it.contactId == contact.id || 
+                it.number.replace(" ", "") == contact.phone.replace(" ", "") 
+            }
+        }
+    }
 
     if (contact == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -154,7 +170,7 @@ fun ContactDetailScreen(
                     QuickActionCircleButton(
                         label = "Ara",
                         icon = Icons.Default.Phone,
-                        onClick = { viewModel.makeCall(contact.phone, contact.name, contact.id) }
+                        onClick = { showCallSimulatorDialog = true }
                     )
                     QuickActionCircleButton(
                         label = "Mesaj",
@@ -230,7 +246,184 @@ fun ContactDetailScreen(
                     }
                 }
             }
+
+            if (contactLogs.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Son Aramalar",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                    )
+                }
+
+                items(contactLogs.take(5)) { log ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val icon = when (log.callType) {
+                                "Cevapsız" -> Icons.Default.CallMissed
+                                "Gelen" -> Icons.AutoMirrored.Filled.CallReceived
+                                else -> Icons.AutoMirrored.Filled.CallMade
+                            }
+                            val iconColor = when (log.callType) {
+                                "Cevapsız" -> Color.Red
+                                "Gelen" -> Color(0xFF4CAF50)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = log.callType,
+                                tint = iconColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = log.callType + " Arama",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = if (log.callType == "Cevapsız") Color.Red else MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val dateStr = java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
+                                Text(
+                                    text = dateStr,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (log.callType != "Cevapsız" && log.durationSeconds > 0) {
+                                val durationText = if (log.durationSeconds / 60 > 0) {
+                                    "${log.durationSeconds / 60} dk ${log.durationSeconds % 60} sn"
+                                } else {
+                                    "${log.durationSeconds % 60} sn"
+                                }
+                                Text(
+                                    text = durationText,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    if (showCallSimulatorDialog) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        AlertDialog(
+            onDismissRequest = { showCallSimulatorDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Phone,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Arama Seçenekleri", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${contact.name} (${contact.phone}) numaralı kişi aranıyor. Lütfen yapmak istediğiniz arama türünü seçin:",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Outgoing simulated
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            viewModel.startSimulatedCall(context, contact.phone, contact.name, "Giden", 0)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Giden Arama Simülasyonu", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Uygulama içi giden arama ekranını açar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Incoming simulated with 5 seconds delay
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            android.widget.Toast.makeText(context, "Gelen arama 5 saniye içinde simüle edilecek...", android.widget.Toast.LENGTH_SHORT).show()
+                            viewModel.startSimulatedCall(context, contact.phone, contact.name, "Gelen", 5)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.RingVolume, contentDescription = null, tint = Color(0xFF4CAF50))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Gelen Arama Simülasyonu (5sn)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("5 saniye bekler ve gelen arama ekranını açar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Real call
+                    Card(
+                        onClick = {
+                            showCallSimulatorDialog = false
+                            viewModel.makeCall(contact.phone, contact.name, contact.id)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Gerçek Arama Başlat", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Cihazın kendi telefon şebekesini kullanır.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCallSimulatorDialog = false }) {
+                    Text("İptal", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 

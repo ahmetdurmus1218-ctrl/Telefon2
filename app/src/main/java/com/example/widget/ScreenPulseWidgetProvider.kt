@@ -74,7 +74,7 @@ open class ScreenPulseWidgetProvider : AppWidgetProvider() {
 
         val contactsStr = "$contactsCount Kişi"
         val callsStr = "$callsCount Arama"
-        val headerStr = "Rehber & Aramalar"
+        val headerStr = "Telefon & Aramalar"
 
         return when {
             minWidth >= 200 && minHeight >= 200 -> {
@@ -84,7 +84,7 @@ open class ScreenPulseWidgetProvider : AppWidgetProvider() {
                     setTextViewText(R.id.widget_screen_off_value, callsStr)
                     setTextViewText(R.id.widget_last_charge_time, headerStr)
                     setTextViewText(R.id.widget_temp_value, "Aktif")
-                    setTextViewText(R.id.widget_voltage_value, "Rehber")
+                    setTextViewText(R.id.widget_voltage_value, "Telefon")
                     
                     // Draw circular visualization
                     val bitmap = drawCircularIndicator(contactsCount)

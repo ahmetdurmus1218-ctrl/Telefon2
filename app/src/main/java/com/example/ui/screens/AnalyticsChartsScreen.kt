@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -32,6 +34,9 @@ fun AnalyticsChartsScreen(
     modifier: Modifier = Modifier
 ) {
     val favorites by viewModel.favoriteContacts.collectAsState()
+    val allContacts by viewModel.allContacts.collectAsState()
+    var showAddFavoriteDialog by remember { mutableStateOf(false) }
+    var searchFavoriteQuery by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -52,7 +57,7 @@ fun AnalyticsChartsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { /* Add Favorite */ }) {
+                    IconButton(onClick = { showAddFavoriteDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Favori Ekle",
@@ -62,7 +67,7 @@ fun AnalyticsChartsScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { /* Edit Favorites */ }) {
+                    TextButton(onClick = { showAddFavoriteDialog = true }) {
                         Text(
                             text = "Düzenle",
                             fontWeight = FontWeight.Bold,
@@ -100,6 +105,13 @@ fun AnalyticsChartsScreen(
                         fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { showAddFavoriteDialog = true },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Favori Ekle", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         } else {
@@ -120,6 +132,116 @@ fun AnalyticsChartsScreen(
                 }
             }
         }
+    }
+
+    if (showAddFavoriteDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showAddFavoriteDialog = false
+                searchFavoriteQuery = ""
+            },
+            title = {
+                Text(
+                    text = "Favorileri Düzenle",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchFavoriteQuery,
+                        onValueChange = { searchFavoriteQuery = it },
+                        placeholder = { Text("Kişilerde ara...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    val filtered = allContacts.filter {
+                        it.name.contains(searchFavoriteQuery, ignoreCase = true) ||
+                        it.phone.contains(searchFavoriteQuery, ignoreCase = true)
+                    }
+
+                    if (filtered.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Kişi bulunamadı",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(filtered) { contact ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.toggleFavorite(contact) }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        AvatarView(name = contact.name, badge = "", size = 40.dp)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = contact.name,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 15.sp,
+                                                color = MaterialTheme.colorScheme.onBackground
+                                            )
+                                            Text(
+                                                text = contact.phone,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Checkbox(
+                                        checked = contact.isFavorite,
+                                        onCheckedChange = { viewModel.toggleFavorite(contact) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { 
+                        showAddFavoriteDialog = false
+                        searchFavoriteQuery = ""
+                    }
+                ) {
+                    Text("Kapat", fontWeight = FontWeight.Bold)
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        )
     }
 }
 

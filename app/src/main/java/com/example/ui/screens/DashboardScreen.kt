@@ -25,6 +25,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.database.ContactEntity
 import com.example.ui.viewmodel.ScreenPulseViewModel
+import android.content.Context
+import android.app.role.RoleManager
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,8 +40,60 @@ fun DashboardScreen(
     onAddContactClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    
+    // Check if permission or default dialer is missing
+    var hasContactsPermission by remember {
+        mutableStateOf(
+            context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasCallLogPermission by remember {
+        mutableStateOf(
+            context.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasCallPhonePermission by remember {
+        mutableStateOf(
+            context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var isDefaultDialerApp by remember {
+        mutableStateOf(isDefaultDialer(context))
+    }
+
+    // Refresh status on launch or periodically
+    LaunchedEffect(Unit) {
+        hasContactsPermission = context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        hasCallLogPermission = context.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        hasCallPhonePermission = context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        isDefaultDialerApp = isDefaultDialer(context)
+        if (hasContactsPermission && hasCallLogPermission) {
+            viewModel.syncDeviceData()
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasContactsPermission = permissions[android.Manifest.permission.READ_CONTACTS] ?: hasContactsPermission
+        hasCallLogPermission = permissions[android.Manifest.permission.READ_CALL_LOG] ?: hasCallLogPermission
+        hasCallPhonePermission = permissions[android.Manifest.permission.CALL_PHONE] ?: hasCallPhonePermission
+        
+        if (hasContactsPermission && hasCallLogPermission) {
+            viewModel.syncDeviceData()
+        }
+    }
+
+    val dialerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        isDefaultDialerApp = isDefaultDialer(context)
+    }
+
     val contacts by viewModel.allContacts.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    var showMenu by remember { mutableStateOf(false) }
     
     val filteredContacts = if (searchQuery.isEmpty()) {
         contacts
@@ -78,12 +136,37 @@ fun DashboardScreen(
                             modifier = Modifier.size(28.dp)
                         )
                     }
-                    IconButton(onClick = { /* More options */ }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Seçenekler",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Seçenekler",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Kişileri Yeniden Eşitle") },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.syncDeviceData()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Yeni Grup Oluştur") },
+                                onClick = { showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.GroupAdd, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Favorileri Düzenle") },
+                                onClick = { showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -116,6 +199,30 @@ fun DashboardScreen(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     if (searchQuery.isEmpty()) {
+                        // Permission & Default Dialer Banner
+                        item {
+                            PermissionAndDefaultDialerBanner(
+                                hasContacts = hasContactsPermission,
+                                hasCallLogs = hasCallLogPermission,
+                                hasCallPhone = hasCallPhonePermission,
+                                isDefaultDialer = isDefaultDialerApp,
+                                onRequestPermissions = {
+                                    permissionLauncher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.READ_CONTACTS,
+                                            android.Manifest.permission.WRITE_CONTACTS,
+                                            android.Manifest.permission.READ_CALL_LOG,
+                                            android.Manifest.permission.WRITE_CALL_LOG,
+                                            android.Manifest.permission.CALL_PHONE
+                                        )
+                                    )
+                                },
+                                onRequestDefaultDialer = {
+                                    requestDefaultDialer(context, dialerLauncher)
+                                }
+                            )
+                        }
+
                         // "Kişi grupları" Banner
                         item {
                             GroupsBanner()
@@ -515,5 +622,128 @@ fun AlphabetSidebar(
                     }
             )
         }
+    }
+}
+
+@Composable
+fun PermissionAndDefaultDialerBanner(
+    hasContacts: Boolean,
+    hasCallLogs: Boolean,
+    hasCallPhone: Boolean,
+    isDefaultDialer: Boolean,
+    onRequestPermissions: () -> Unit,
+    onRequestDefaultDialer: () -> Unit
+) {
+    if (hasContacts && hasCallLogs && hasCallPhone && isDefaultDialer) return
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhoneAndroid,
+                        contentDescription = "Telefon Entegrasyonu",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Telefon Entegrasyonu",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = "Gerçek kişilerinizin ve aramalarınızın görünebilmesi için izin verin ve varsayılan yapın.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!hasContacts || !hasCallLogs || !hasCallPhone) {
+                    TextButton(
+                        onClick = onRequestPermissions,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("İzinleri Ver", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                
+                if (!isDefaultDialer) {
+                    Button(
+                        onClick = onRequestDefaultDialer,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text("Varsayılan Yap", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun isDefaultDialer(context: Context): Boolean {
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
+        roleManager?.isRoleHeld(RoleManager.ROLE_DIALER) ?: false
+    } else {
+        val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+        telecomManager?.defaultDialerPackage == context.packageName
+    }
+}
+
+fun requestDefaultDialer(context: Context, launcher: androidx.activity.result.ActivityResultLauncher<Intent>) {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
+        if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER) && !roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
+            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+            launcher.launch(intent)
+        }
+    } else {
+        val intent = Intent(android.telecom.TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+            .putExtra(android.telecom.TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+        launcher.launch(intent)
     }
 }

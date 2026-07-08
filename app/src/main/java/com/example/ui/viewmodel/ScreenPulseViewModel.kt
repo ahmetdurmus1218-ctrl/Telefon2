@@ -10,6 +10,7 @@ import com.example.data.repository.UsageRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 sealed interface RehberUiState {
     object Loading : RehberUiState
@@ -49,6 +50,13 @@ class ScreenPulseViewModel(
     init {
         viewModelScope.launch {
             repository.prepopulateIfEmpty()
+            repository.syncDeviceContactsAndLogs()
+        }
+    }
+
+    fun syncDeviceData() {
+        viewModelScope.launch {
+            repository.syncDeviceContactsAndLogs()
         }
     }
 
@@ -76,7 +84,7 @@ class ScreenPulseViewModel(
     }
 
     // --- CONTACT OPERATIONS ---
-    fun addContact(name: String, phone: String, email: String, birthday: String, group: String, other: String, isFavorite: Boolean, favoriteBadge: String, onComplete: () -> Unit = {}) {
+    fun addContact(name: String, phone: String, email: String, birthday: String, group: String, other: String, isFavorite: Boolean, favoriteBadge: String, storageAccount: String, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             repository.insertContact(
                 ContactEntity(
@@ -87,9 +95,12 @@ class ScreenPulseViewModel(
                     group = group,
                     other = other,
                     isFavorite = isFavorite,
-                    favoriteBadge = favoriteBadge
+                    favoriteBadge = favoriteBadge,
+                    storageAccount = storageAccount
                 )
             )
+            repository.insertDeviceContact(name, phone, email)
+            repository.syncDeviceContactsAndLogs()
             onComplete()
         }
     }
@@ -126,7 +137,24 @@ class ScreenPulseViewModel(
                     timestamp = System.currentTimeMillis()
                 )
             )
+            repository.launchActualCall(phone)
             clearDialpad()
+        }
+    }
+
+    fun startSimulatedCall(context: android.content.Context, phone: String, name: String, type: String, delaySeconds: Int = 0) {
+        viewModelScope.launch {
+            if (delaySeconds > 0) {
+                delay(delaySeconds * 1000L)
+            }
+            val intent = android.content.Intent(context, com.example.CallActivity::class.java).apply {
+                putExtra("is_simulation", true)
+                putExtra("sim_number", phone)
+                putExtra("sim_name", name.ifEmpty { phone })
+                putExtra("sim_type", type)
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            context.startActivity(intent)
         }
     }
 

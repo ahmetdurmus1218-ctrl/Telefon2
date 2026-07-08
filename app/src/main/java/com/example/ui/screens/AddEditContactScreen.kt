@@ -40,6 +40,7 @@ fun AddEditContactScreen(
     var other by remember { mutableStateOf(contact?.other ?: "") }
     var isFavorite by remember { mutableStateOf(contact?.isFavorite ?: false) }
     var favoriteBadge by remember { mutableStateOf(contact?.favoriteBadge ?: "") }
+    var storageAccount by remember { mutableStateOf(contact?.storageAccount ?: "Cihaz Hafızası") }
 
     var showError by remember { mutableStateOf(false) }
 
@@ -74,6 +75,7 @@ fun AddEditContactScreen(
                                         other = other,
                                         isFavorite = isFavorite || favoriteBadge.isNotEmpty(),
                                         favoriteBadge = favoriteBadge,
+                                        storageAccount = storageAccount,
                                         onComplete = onBackClick
                                     )
                                 } else {
@@ -87,7 +89,8 @@ fun AddEditContactScreen(
                                                 group = group,
                                                 other = other,
                                                 isFavorite = isFavorite || favoriteBadge.isNotEmpty(),
-                                                favoriteBadge = favoriteBadge
+                                                favoriteBadge = favoriteBadge,
+                                                storageAccount = storageAccount
                                             ),
                                             onComplete = onBackClick
                                         )
@@ -128,6 +131,52 @@ fun AddEditContactScreen(
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
+                }
+            }
+
+            item {
+                var expanded by remember { mutableStateOf(false) }
+                val options = listOf("Cihaz Hafızası", "Google Hesabı (e.webtekno@gmail.com)", "SIM Kart")
+                val icons = listOf(Icons.Default.PhoneAndroid, Icons.Default.Cloud, Icons.Default.SdCard)
+                
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = storageAccount,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Kayıt Yeri") },
+                        leadingIcon = {
+                            val idx = options.indexOf(storageAccount).coerceAtLeast(0)
+                            Icon(icons[idx], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { expanded = true }) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Değiştir")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { expanded = true },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        options.forEachIndexed { index, option ->
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(icons[index], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                },
+                                text = { Text(option) },
+                                onClick = {
+                                    storageAccount = option
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
