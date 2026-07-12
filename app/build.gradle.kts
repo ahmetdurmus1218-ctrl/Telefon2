@@ -47,7 +47,9 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      // Uses Gradle's built-in auto-generated debug keystore (~/.android/debug.keystore),
+      // so no debug.keystore file needs to be committed to the repo for this to build,
+      // whether locally in Android Studio or in CI (e.g. GitHub Actions).
     }
   }
   compileOptions {
