@@ -7,7 +7,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -65,7 +69,19 @@ class MainActivity : ComponentActivity() {
         viewModel = vm
 
         setContent {
-            MyApplicationTheme {
+            val darkTheme = isSystemInDarkTheme()
+            MyApplicationTheme(darkTheme = darkTheme) {
+                // Keep the status bar & navigation bar icon contrast in sync with the
+                // current theme, so icons never disappear when the phone switches
+                // between light and dark mode.
+                val view = LocalView.current
+                if (!view.isInEditMode) {
+                    SideEffect {
+                        val controller = WindowCompat.getInsetsController(window, view)
+                        controller.isAppearanceLightStatusBars = !darkTheme
+                        controller.isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
                 MainContainer(viewModel = viewModel)
             }
         }
@@ -167,6 +183,13 @@ fun MainContainer(viewModel: ScreenPulseViewModel) {
                     },
                     onAddContactClick = {
                         navController.navigate("add")
+                    },
+                    onNavigateToFavorites = {
+                        navController.navigate(ScreenRoute.FAVORILER.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }
@@ -175,6 +198,13 @@ fun MainContainer(viewModel: ScreenPulseViewModel) {
                     viewModel = viewModel,
                     onContactClick = { contactId ->
                         navController.navigate("details/$contactId")
+                    },
+                    onNavigateToSettings = {
+                        navController.navigate(ScreenRoute.AYARLAR.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }
@@ -187,7 +217,7 @@ fun MainContainer(viewModel: ScreenPulseViewModel) {
                 )
             }
             composable(ScreenRoute.AYARLAR.route) {
-                SettingsScreen()
+                SettingsScreen(viewModel = viewModel)
             }
             composable("details/{contactId}") { backStackEntry ->
                 val contactIdStr = backStackEntry.arguments?.getString("contactId")

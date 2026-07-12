@@ -38,6 +38,7 @@ fun DashboardScreen(
     viewModel: ScreenPulseViewModel,
     onContactClick: (Long) -> Unit,
     onAddContactClick: () -> Unit,
+    onNavigateToFavorites: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -94,8 +95,10 @@ fun DashboardScreen(
     val contacts by viewModel.allContacts.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
-    
-    val filteredContacts = if (searchQuery.isEmpty()) {
+    var showGroupsDialog by remember { mutableStateOf(false) }
+    var groupFilter by remember { mutableStateOf<String?>(null) }
+
+    val searchFiltered = if (searchQuery.isEmpty()) {
         contacts
     } else {
         contacts.filter { 
@@ -103,6 +106,9 @@ fun DashboardScreen(
             it.phone.contains(searchQuery, ignoreCase = true) 
         }
     }
+    val filteredContacts = groupFilter?.let { g ->
+        searchFiltered.filter { it.group.equals(g, ignoreCase = true) }
+    } ?: searchFiltered
 
     // Group contacts by first letter of their name
     val groupedContacts = filteredContacts.groupBy { 
@@ -121,7 +127,7 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "${contacts.size} kişi",
+                            text = groupFilter?.let { "${filteredContacts.size} kişi • Grup: $it" } ?: "${contacts.size} kişi",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -157,15 +163,31 @@ fun DashboardScreen(
                                 leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Yeni Grup Oluştur") },
-                                onClick = { showMenu = false },
+                                text = { Text("Grupları Yönet") },
+                                onClick = {
+                                    showMenu = false
+                                    showGroupsDialog = true
+                                },
                                 leadingIcon = { Icon(Icons.Default.GroupAdd, contentDescription = null) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Favorileri Düzenle") },
-                                onClick = { showMenu = false },
+                                onClick = {
+                                    showMenu = false
+                                    onNavigateToFavorites()
+                                },
                                 leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) }
                             )
+                            if (groupFilter != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Grup Filtresini Kaldır") },
+                                    onClick = {
+                                        showMenu = false
+                                        groupFilter = null
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.FilterAltOff, contentDescription = null) }
+                                )
+                            }
                         }
                     }
                 },
@@ -193,6 +215,34 @@ fun DashboardScreen(
                     query = searchQuery,
                     onQueryChange = { viewModel.setSearchQuery(it) }
                 )
+
+                groupFilter?.let { g ->
+                    Surface(
+                        onClick = { groupFilter = null },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Grup: $g",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Filtreyi Kaldır",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -225,16 +275,17 @@ fun DashboardScreen(
 
                         // "Kişi grupları" Banner
                         item {
-                            GroupsBanner()
+                            GroupsBanner(onClick = { showGroupsDialog = true })
                         }
 
                         // "Öne çıkanlar" (Featured horizontal list)
-                        val featured = contacts.filter { it.favoriteBadge.isNotEmpty() }
+                        val featured = contacts.filter { it.favoriteBadge.isNotEmpty() || it.isFavorite }
                         if (featured.isNotEmpty()) {
                             item {
                                 FeaturedContactsSection(
                                     featuredContacts = featured,
-                                    onContactClick = onContactClick
+                                    onContactClick = onContactClick,
+                                    onSeeAllClick = onNavigateToFavorites
                                 )
                             }
                         }
@@ -289,6 +340,74 @@ fun DashboardScreen(
                 )
             }
         }
+    }
+
+    if (showGroupsDialog) {
+        val groupCounts = contacts
+            .mapNotNull { it.group.takeIf { g -> g.isNotBlank() } }
+            .groupingBy { it }
+            .eachCount()
+            .toSortedMap()
+
+        AlertDialog(
+            onDismissRequest = { showGroupsDialog = false },
+            title = {
+                Text("Kişi Grupları", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            },
+            text = {
+                Column {
+                    if (groupCounts.isEmpty()) {
+                        Text(
+                            text = "Henüz bir grup yok. Bir kişiyi düzenlerken \"Grup\" alanına bir isim yazarak (ör. Aile, İş) yeni bir grup oluşturabilirsiniz.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Bir gruba dokunarak kişi listesini o gruba göre filtreleyebilirsiniz.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                            items(groupCounts.entries.toList()) { (group, count) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            groupFilter = group
+                                            showGroupsDialog = false
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.People,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(group, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
+                                    }
+                                    Text("$count kişi", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showGroupsDialog = false }) {
+                    Text("Kapat", fontWeight = FontWeight.Bold)
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
 }
 
@@ -425,7 +544,8 @@ fun GroupsBanner(onClick: () -> Unit = {}) {
 @Composable
 fun FeaturedContactsSection(
     featuredContacts: List<ContactEntity>,
-    onContactClick: (Long) -> Unit
+    onContactClick: (Long) -> Unit,
+    onSeeAllClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -450,7 +570,7 @@ fun FeaturedContactsSection(
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { /* Handle All Click */ }
+                modifier = Modifier.clickable(onClick = onSeeAllClick)
             )
         }
 
@@ -585,7 +705,7 @@ fun AvatarView(
                     .offset(x = 2.dp, y = 2.dp)
                     .size(16.dp)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(2.dp)
                     .background(Color(0xFF4CAF50), CircleShape)
             )

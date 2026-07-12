@@ -27,8 +27,11 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    viewModel: com.example.ui.viewmodel.ScreenPulseViewModel,
     modifier: Modifier = Modifier
 ) {
+    val contactsForExport by viewModel.allContacts.collectAsState()
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     // Dialog Dialog States
@@ -334,7 +337,7 @@ fun SettingsScreen(
                     }
 
                     Button(
-                        onClick = { /* Export action */ },
+                        onClick = { exportContactsToVcf(exportContext, contactsForExport) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.ImportExport, contentDescription = null)
@@ -343,7 +346,13 @@ fun SettingsScreen(
                     }
 
                     Button(
-                        onClick = { /* Import action */ },
+                        onClick = {
+                            android.widget.Toast.makeText(
+                                exportContext,
+                                "İçe aktarma yakında eklenecek. Şimdilik kişi eklemek için + butonunu kullanabilirsiniz.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.DriveFileMove, contentDescription = null)
@@ -604,6 +613,45 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+}
+
+// --- CONTACT EXPORT (.vcf) ---
+
+fun exportContactsToVcf(context: android.content.Context, contacts: List<com.example.data.database.ContactEntity>) {
+    if (contacts.isEmpty()) {
+        android.widget.Toast.makeText(context, "Dışa aktarılacak kişi bulunamadı.", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val vcf = buildString {
+            contacts.forEach { c ->
+                append("BEGIN:VCARD\r\n")
+                append("VERSION:3.0\r\n")
+                append("FN:${c.name}\r\n")
+                append("TEL;TYPE=CELL:${c.phone}\r\n")
+                if (c.email.isNotBlank()) append("EMAIL:${c.email}\r\n")
+                if (c.group.isNotBlank()) append("CATEGORIES:${c.group}\r\n")
+                append("END:VCARD\r\n")
+            }
+        }
+        val exportDir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = java.io.File(exportDir, "kisiler.vcf")
+        file.writeText(vcf)
+
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/x-vcard"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(android.content.Intent.createChooser(shareIntent, "Kişileri paylaş"))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Dışa aktarma başarısız: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

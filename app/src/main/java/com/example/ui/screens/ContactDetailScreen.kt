@@ -38,6 +38,7 @@ fun ContactDetailScreen(
     val contacts by viewModel.allContacts.collectAsState()
     val contact = contacts.find { it.id == contactId }
     var showCallSimulatorDialog by remember { mutableStateOf(false) }
+    val actionContext = androidx.compose.ui.platform.LocalContext.current
 
     val callLogs by viewModel.allCallLogs.collectAsState()
     val contactLogs = remember(callLogs, contact) {
@@ -99,21 +100,29 @@ fun ContactDetailScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            // Header Hero Area with MagicOS sky fluid gradient background
+            // Header Hero Area with MagicOS-style fluid gradient background.
+            // Uses different tones for light/dark so the gradient never washes
+            // out or clashes with the surrounding theme.
             item {
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val heroColors = if (isDark) {
+                    listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                        MaterialTheme.colorScheme.background
+                    )
+                } else {
+                    listOf(
+                        Color(0xFF81D4FA), // Light Sky Blue
+                        Color(0xFFE1F5FE),
+                        MaterialTheme.colorScheme.background
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xFF81D4FA), // Light Sky Blue
-                                    Color(0xFFE1F5FE),
-                                    MaterialTheme.colorScheme.background
-                                )
-                            )
-                        ),
+                        .background(Brush.verticalGradient(colors = heroColors)),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -175,17 +184,23 @@ fun ContactDetailScreen(
                     QuickActionCircleButton(
                         label = "Mesaj",
                         icon = Icons.Default.Message,
-                        onClick = { /* Message */ }
+                        onClick = {
+                            sendSms(actionContext, contact.phone)
+                        }
                     )
                     QuickActionCircleButton(
                         label = "Görüntülü",
                         icon = Icons.Default.VideoCall,
-                        onClick = { /* Video Call */ }
+                        onClick = {
+                            startVideoCall(actionContext, contact.phone)
+                        }
                     )
                     QuickActionCircleButton(
                         label = "E-posta",
                         icon = Icons.Default.Email,
-                        onClick = { /* Email */ }
+                        onClick = {
+                            sendEmail(actionContext, contact.email)
+                        }
                     )
                 }
             }
@@ -425,6 +440,63 @@ fun ContactDetailScreen(
             }
         )
     }
+}
+
+// --- QUICK ACTION INTENT HELPERS ---
+
+fun sendSms(context: android.content.Context, phone: String) {
+    try {
+        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+            data = android.net.Uri.parse("smsto:$phone")
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Mesajlaşma uygulaması bulunamadı.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun sendEmail(context: android.content.Context, email: String) {
+    if (email.isBlank()) {
+        android.widget.Toast.makeText(context, "Bu kişi için e-posta adresi kayıtlı değil.", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+            data = android.net.Uri.parse("mailto:$email")
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "E-posta uygulaması bulunamadı.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun startVideoCall(context: android.content.Context, phone: String) {
+    // There is no universal system "video call" intent, so we try the most
+    // common video-calling apps that support a tel: number, and fall back to
+    // a clear message if none are installed.
+    val candidatePackages = listOf(
+        "com.whatsapp" to android.content.Intent.ACTION_VIEW,
+        "com.google.android.apps.tachyon" to android.content.Intent.ACTION_VIEW // Google Duo/Meet
+    )
+    val pm = context.packageManager
+    for ((pkg, action) in candidatePackages) {
+        try {
+            pm.getPackageInfo(pkg, 0)
+            val intent = android.content.Intent(action).apply {
+                setPackage(pkg)
+                data = android.net.Uri.parse("tel:$phone")
+            }
+            context.startActivity(intent)
+            return
+        } catch (e: Exception) {
+            // Not installed, try next candidate
+        }
+    }
+    android.widget.Toast.makeText(
+        context,
+        "Görüntülü arama için yüklü bir uygulama bulunamadı (ör. WhatsApp).",
+        android.widget.Toast.LENGTH_SHORT
+    ).show()
 }
 
 @Composable

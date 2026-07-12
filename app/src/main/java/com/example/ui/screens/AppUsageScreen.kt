@@ -34,6 +34,7 @@ import java.util.*
 fun AppUsageScreen(
     viewModel: ScreenPulseViewModel,
     onContactClick: (Long) -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val callLogs by viewModel.allCallLogs.collectAsState()
@@ -47,6 +48,9 @@ fun AppUsageScreen(
     var simNumber by remember { mutableStateOf("") }
     var simName by remember { mutableStateOf("") }
     var simContactId by remember { mutableStateOf<Long?>(null) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var sortNewestFirst by remember { mutableStateOf(true) }
+    var onlySavedContacts by remember { mutableStateOf(false) }
 
     // Filter calls based on the active tab and search query
     val filteredLogs = callLogs.filter { log ->
@@ -65,7 +69,11 @@ fun AppUsageScreen(
             else -> true // "Tümü"
         }
 
-        matchesSearch && matchesTab
+        val matchesSavedOnly = !onlySavedContacts || log.contactId != null
+
+        matchesSearch && matchesTab && matchesSavedOnly
+    }.let { list ->
+        if (sortNewestFirst) list.sortedByDescending { it.timestamp } else list.sortedBy { it.timestamp }
     }
 
     // Group logs into Today vs Older
@@ -99,12 +107,44 @@ fun AppUsageScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    IconButton(onClick = { /* Settings */ }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Seçenekler",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    Box {
+                        IconButton(onClick = { showOptionsMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Seçenekler",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showOptionsMenu,
+                            onDismissRequest = { showOptionsMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (sortNewestFirst) "En Eskiye Göre Sırala" else "En Yeniye Göre Sırala") },
+                                onClick = {
+                                    sortNewestFirst = !sortNewestFirst
+                                    showOptionsMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (onlySavedContacts) "Tüm Aramaları Göster" else "Sadece Kayıtlı Kişiler") },
+                                onClick = {
+                                    onlySavedContacts = !onlySavedContacts
+                                    showOptionsMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Contacts, contentDescription = null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Arama Ayarları") },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    onNavigateToSettings()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -675,7 +715,10 @@ fun DialpadButton(
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = Color(0xFFF0F3F8), // Pure light-grey circular keys
+        // Theme-aware key background: light-grey in light mode, a lighter dark
+        // surface tone in dark mode, so the keys never render as a bright white
+        // circle on a dark background (or vice versa).
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier.aspectRatio(1f)
     ) {
         Column(
